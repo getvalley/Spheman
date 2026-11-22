@@ -1,0 +1,58 @@
+name: Deploy site to GitHub Pages
+
+# Put site.zip (any single .zip) in the repo root next to .github/, push to main.
+# This workflow unzips it and publishes it. No other files needed.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unzip site
+        run: |
+          zip_file=$(ls -1 *.zip 2>/dev/null | head -n 1)
+          if [ -z "$zip_file" ]; then
+            echo "No .zip file found in the repo root" >&2
+            exit 1
+          fi
+          mkdir _site
+          unzip -q -o "$zip_file" -d _site
+          # If the zip wraps everything in one folder, move its contents up
+          if [ ! -f _site/index.html ] && [ "$(ls -1A _site | wc -l)" -eq 1 ] && [ -d "_site/$(ls -1A _site)" ]; then
+            inner="_site/$(ls -1A _site)"
+            mv "$inner"/* "$inner"/.[!.]* _site/ 2>/dev/null || true
+            rmdir "$inner"
+          fi
+          test -f _site/index.html || { echo "index.html not found in the zip" >&2; exit 1; }
+          touch _site/.nojekyll
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
